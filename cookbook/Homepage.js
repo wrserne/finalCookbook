@@ -2,20 +2,18 @@ const express = require('express');
 const mysql = require('mysql');
 const path = require('path');
 const multer = require('multer');
-const app = express();
+const router = express.Router();
 const session = require('express-session');
-const dotenv = require('dotenv'); // Added for environment variables
+const dotenv = require('dotenv');
 
-// Load environment variables from .env file
 dotenv.config();
 
-// Access environment variables for database connection
 const dbHost = process.env.DB_HOST;
 const dbUser = process.env.DB_USER;
 const dbPassword = process.env.DB_PASSWORD;
 const dbName = process.env.DB_NAME;
 
-app.use(session({
+router.use(session({
     secret: 'secret',
     resave: false,
     saveUninitialized: true
@@ -31,13 +29,12 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 const connection = mysql.createConnection({
-    host: dbHost,  // Use the environment variable for the RDS instance endpoint
-    user: dbUser,      // Use the environment variable for the RDS username
-    password: dbPassword,  // Use the environment variable for the RDS password
-    database: dbName     // Use the environment variable for the database name
+    host: dbHost,
+    user: dbUser,
+    password: dbPassword,
+    database: dbName
 });
 
-// Connect to MySQL
 connection.connect((err) => {
     if (err) {
         console.error('Error connecting to the database: ' + err.stack);
@@ -46,10 +43,10 @@ connection.connect((err) => {
     console.log('Connected to the database!');
 });
 
-app.set('view engine', 'ejs');
-app.use(express.urlencoded({ extended: false }));
-app.use(express.static(path.join(__dirname, 'public')));
-app.set('views', path.join(__dirname, 'views'));
+router.set('view engine', 'ejs');
+router.use(express.urlencoded({ extended: false }));
+router.use(express.static(path.join(__dirname, 'public')));
+router.set('views', path.join(__dirname, 'views'));
 
 function requireAuth(req, res, next) {
     if (req.session.authenticated) {
@@ -59,7 +56,7 @@ function requireAuth(req, res, next) {
     }
 }
 
-app.get('/editRecipe/:id', requireAuth, (req, res) => {
+router.get('/editRecipe/:id', requireAuth, (req, res) => {
     const recipeId = req.params.id;
 
     const sql = 'SELECT * FROM recipes WHERE id = ?';
@@ -76,20 +73,19 @@ app.get('/editRecipe/:id', requireAuth, (req, res) => {
         }
 
         const recipe = results[0];
-        // Render the editRecipe.ejs template and pass the recipe data
         res.render('editRecipe', { recipe });
     });
 });
 
-app.post('/updateRecipe/:id', requireAuth, upload.single('newPhoto'), (req, res) => {
+router.post('/updateRecipe/:id', requireAuth, upload.single('newPhoto'), (req, res) => {
     const recipeId = req.params.id;
     const { title, ingredients, instructions, familySecrets, type, makes } = req.body;
     const newImageUrl = req.file ? '/images/' + req.file.filename : '/images/default-photo.jpg';
-    const userId = req.session.userId; // Extract user ID from the session
+    const userId = req.session.userId;
 
-    // Update the recipe in the database, including the new photo URL if provided
     const sql = 'UPDATE recipes SET title=?, ingredients=?, instructions=?, family_secrets=?, type=?, image_url=?, userId=?, makes=? WHERE id=?';
-    const params = [title, ingredients, instructions, familySecrets, type, newImageUrl, userId, makes, recipeId]; // Added recipeId at the end
+    const params = [title, ingredients, instructions, familySecrets, type, newImageUrl, userId, makes, recipeId];
+
     connection.query(sql, params, (err, result) => {
         if (err) {
             console.error('Error updating recipe: ' + err.stack);
@@ -101,7 +97,7 @@ app.post('/updateRecipe/:id', requireAuth, upload.single('newPhoto'), (req, res)
     });
 });
 
-app.get('/search', async (req, res) => {
+router.get('/search', async (req, res) => {
     try {
         const query = req.query.query;
         const sql = 'SELECT * FROM recipes WHERE title LIKE ?';
@@ -120,7 +116,7 @@ app.get('/search', async (req, res) => {
     }
 });
 
-app.get('/', (req, res) => {
+router.get('/', (req, res) => {
     const sql = 'SELECT * FROM recipes';
     connection.query(sql, (err, results) => {
         if (err) {
@@ -162,7 +158,7 @@ app.get('/', (req, res) => {
     });
 });
 
-app.get('/recipe/:id', (req, res) => {
+router.get('/recipe/:id', (req, res) => {
     const recipeId = req.params.id;
 
     const sql = 'SELECT * FROM recipes WHERE id = ?';
@@ -187,11 +183,11 @@ app.get('/recipe/:id', (req, res) => {
             'Entrées', 'Veggies', 'Cakes', 'Pies', 'Cookies'
         ];
 
-        res.render('recipe-details', { recipe, categories }); // Pass the categories array
+        res.render('recipe-details', { recipe, categories });
     });
 });
 
-app.get('/category/:category', (req, res) => {
+router.get('/category/:category', (req, res) => {
     const category = req.params.category;
     const sql = 'SELECT * FROM recipes WHERE type = ?';
     connection.query(sql, [category], (err, results) => {
@@ -213,12 +209,12 @@ app.get('/category/:category', (req, res) => {
     });
 });
 
-app.get('/register', (req, res) => {
+router.get('/register', (req, res) => {
     res.render('register', { errorMessage: req.session.errorMessage });
     req.session.errorMessage = undefined;
 });
 
-app.post('/register', (req, res) => {
+router.post('/register', (req, res) => {
     const { email, password, firstName, lastName } = req.body;
     const emailCheckSql = 'SELECT * FROM cookbook.users WHERE email = ?';
     connection.query(emailCheckSql, [email], (emailErr, emailResults) => {
@@ -243,7 +239,6 @@ app.post('/register', (req, res) => {
             }
             console.log('User registered successfully!');
 
-            // Log the user in after successful registration
             req.session.authenticated = true;
             req.session.userId = result.insertId;
             req.session.firstName = firstName;
@@ -254,12 +249,12 @@ app.post('/register', (req, res) => {
     });
 });
 
-app.get('/login', (req, res) => {
+router.get('/login', (req, res) => {
     res.render('login', { errorMessage: req.session.errorMessage });
     req.session.errorMessage = undefined;
 });
 
-app.post('/login', (req, res) => {
+router.post('/login', (req, res) => {
     const { email, password } = req.body;
     const sql = 'SELECT * FROM cookbook.users WHERE email = ? AND password = ?';
     connection.query(sql, [email, password], (err, results) => {
@@ -282,7 +277,7 @@ app.post('/login', (req, res) => {
     });
 });
 
-app.get('/logout', (req, res) => {
+router.get('/logout', (req, res) => {
     req.session.destroy((err) => {
         if (err) {
             console.error('Error destroying session: ' + err.stack);
@@ -293,17 +288,16 @@ app.get('/logout', (req, res) => {
     });
 });
 
-app.get('/addRecipe', requireAuth, (req, res) => {
+router.get('/addRecipe', requireAuth, (req, res) => {
     res.render('addRecipe', { authenticated: req.session.authenticated });
 });
 
-app.post('/addRecipe', requireAuth, upload.single('photo'), (req, res) => {
+router.post('/addRecipe', requireAuth, upload.single('photo'), (req, res) => {
     const { title, ingredients, instructions, familySecrets, type, makes } = req.body;
     const image_url = req.file ? '/images/' + req.file.filename : '/images/default-photo.jpg';
     const userId = req.session.userId;
     const sql = 'INSERT INTO recipes (title, ingredients, instructions, family_secrets, type, image_url, userId, makes, added_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)';
 
-    // Fetch the user's first and last name based on the userId
     const userSql = 'SELECT first_name, last_name FROM cookbook.users WHERE id = ?';
     connection.query(userSql, [userId], (err, userResults) => {
         if (err) {
@@ -327,8 +321,7 @@ app.post('/addRecipe', requireAuth, upload.single('photo'), (req, res) => {
     });
 });
 
-app.get('/myRecipes', requireAuth, (req, res) => {
-    // Fetch the user's recipes from the database...
+router.get('/myRecipes', requireAuth, (req, res) => {
     const userId = req.session.userId;
     const sql = 'SELECT * FROM recipes WHERE userId = ?';
     connection.query(sql, [userId], (err, results) => {
@@ -341,8 +334,6 @@ app.get('/myRecipes', requireAuth, (req, res) => {
     });
 });
 
-// ... (Other routes and setup)
+// Add more routes as needed...
 
-app.listen(3000, () => {
-    console.log('Server is running on http://localhost:3000');
-});
+module.exports = router;
